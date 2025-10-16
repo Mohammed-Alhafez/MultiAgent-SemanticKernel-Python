@@ -1,0 +1,133 @@
+"""
+Agent Configuration Module
+
+This module defines and configures all the specialized agents in the multi-agent
+system. Each agent has specific responsibilities and is equipped with appropriate
+plugins and instructions for their domain.
+
+Agents included:
+- TriageAgent: Routes requests to appropriate specialized agents
+- DBAgent: Manages task creation, assignment, and completion
+- InformativeAgent: Provides company policies and HR information
+- MCPAgent: Handles email notifications for task updates
+
+Author: MultiAgent-SemanticKernel-Python
+"""
+
+from semantic_kernel.agents import ChatCompletionAgent
+from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
+from plugins.DBAgentPlugin import DBAgentPlugin
+from plugins.InformativeAgentPlugin import InformativeAgentPlugin
+import asyncio
+import os
+from dotenv import load_dotenv
+from plugins.MCPPlugin import create_email_mcp_plugin 
+
+# Load environment variables
+load_dotenv("config.env")
+
+# Azure OpenAI Configuration
+azure_service = AzureChatCompletion(
+    deployment_name=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT"),
+    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+    endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    api_version="2024-12-01-preview",
+)
+
+# Initialize email MCP plugin
+email_mcp_plugin = asyncio.run(create_email_mcp_plugin())
+
+
+# Triage Agent - Main routing agent
+triage_agent = ChatCompletionAgent(
+    name="TriageAgent",
+    description="Handles incoming requests and determines appropriate handoff.",
+    instructions="""
+You are a triage agent responsible for routing user requests to the appropriate agent.
+
+You can call one of the following functions to perform a handoff:
+- Handoff-transfer_to_DBAgent: Use this if the request is about tasks (adding, assigning, listing, completing).
+- Handoff-transfer_to_InformativeAgent: Use this if the request is about company policies, HR, or internal guidelines.
+- Handoff-transfer_to_MCPAgent: Use this when an email notification needs to be sent.
+
+If a previous agent has completed a task-related action (like adding a task) and returns a handoff instruction, simply execute the handoff.
+
+If the user says "exit" or wants to quit, do not process the request further as the system will handle it.
+
+If you are unsure, ask the user for clarification.
+""",
+    service=azure_service,
+)
+
+
+# Database Agent - Task management specialist
+db_agent = ChatCompletionAgent(
+    name="DBAgent",
+    description="Handles employee task management.",
+    instructions="""
+You manage tasks such as adding, listing, and completing them.
+
+When a task is added or marked as completed, after confirming the action, you must hand off to MCPAgent to send the email notification.
+
+To handoff to MCPAgent, call the function 'Handoff-transfer_to_MCPAgent' with no arguments (empty JSON: {}).
+
+If the user asks something unrelated to tasks (like HR policies or company rules), you must hand the request back to the triage agent by calling 'Handoff-transfer_to_TriageAgent' with no arguments (empty JSON: {}).
+
+If the user says "exit" or wants to quit, do not respond as the system will handle it.
+""",
+    service=azure_service,
+    plugins=[DBAgentPlugin()],
+)
+
+
+# Informative Agent - Company information specialist
+informative_agent = ChatCompletionAgent(
+    name="InformativeAgent",
+    description="Provides company information, guidelines, and HR policies.",
+    instructions="""
+Answer user questions about company policies, internal guidelines, or HR rules.
+
+If the user asks something unrelated to information (like assigning tasks), you must hand the request back to the triage agent by calling 'Handoff-transfer_to_TriageAgent' with no arguments (empty JSON: {}).
+
+If the user says "exit" or wants to quit, do not respond as the system will handle it.
+
+Use your plugins to answer questions. For unrelated topics, handoff back.
+""",
+    service=azure_service,
+    plugins=[InformativeAgentPlugin()],
+)
+
+
+async def init_mcp_agent():
+    """
+    Initialize the MCP (Model Context Protocol) agent for email notifications.
+    
+    This agent is responsible for sending email notifications when tasks are
+    created, updated, or completed. It connects to the MCP server running
+    on localhost:8080.
+    
+    Returns:
+        ChatCompletionAgent: Configured MCP agent for email notifications
+    """
+    email_mcp_plugin = await create_email_mcp_plugin()
+    
+    mcp_agent = ChatCompletionAgent(
+        name="MCPAgent",
+        description="Handles sending task notification emails.",
+        instructions="""
+You are responsible for sending email notifications for task-related updates.
+
+When you receive a handoff from DBAgent, you MUST call the plugin function `EmailMCP-send_task_notification`.
+Do not invent or call any other functions. The only tool you can use is `send_task_notification`.
+
+The required fields are:
+- recipient_email
+- subject
+- body
+
+After sending the notification, confirm success and then handoff back to TriageAgent.
+        """,
+        service=azure_service,
+        plugins=[email_mcp_plugin],
+    )
+    return mcp_agent
