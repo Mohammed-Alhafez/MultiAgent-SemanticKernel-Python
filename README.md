@@ -34,7 +34,7 @@ The system consists of four specialized agents:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/MultiAgent-SemanticKernel-Python.git
+git clone https://github.com/Mohammed-Alhafez/MultiAgent-SemanticKernel-Python.git
 cd MultiAgent-SemanticKernel-Python
 ```
 
