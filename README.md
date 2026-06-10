@@ -1,6 +1,6 @@
 # Multi-Agent Task Management System
 
-A sophisticated multi-agent system built with Microsoft Semantic Kernel that handles task management, company information queries, and email notifications through intelligent agent orchestration.
+A multi-agent system built with Microsoft Semantic Kernel that handles task management, company information queries, and email notifications through intelligent agent orchestration.
 
 ## 🚀 Features
 
